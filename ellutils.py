@@ -1,6 +1,6 @@
 # coding: utf-8
 """ Fonctions utiles pour générer les signaux triphasés à la sortie d'un MZI 
-    à trois sortie et estimer les ellipses de polarisation et la phase dans 
+    à trois sorties et estimer les ellipses de polarisation et la phase dans 
     le cas où les signaux triphasés sont mal équilibrés
 """
 
@@ -136,8 +136,7 @@ def pol2quad(a, b, phi, ou, ov):
 def quad2pol(A, B, C, D, E, F):
     """Convert the quadratic form coefficients into ellipsis geometric/polar
     parameters (a, b, phi, ou, ov) where (ou, ov) is the vector of the ellipis
-    center with the convention a >= b (u is the major axis) and phi in
-    ]-pi/2,pi/2]
+    center with the convention a >= b and phi in ]-pi/2,pi/2]
     See https://en.wikipedia.org/wiki/Ellipse#General_ellipse"""
     Delta = B ** 2 - 4 * A * C
     if Delta > 0:
@@ -171,7 +170,7 @@ def quad2pol(A, B, C, D, E, F):
     else:
         phi = np.arctan((C - A - np.sqrt((A - C) ** 2 + B ** 2)) / B)
 
-    # swap the ellipsis axes to ensure that vector u is the major axis
+    # swap the ellipsis axes to ensure that a>=b
     if a < b:
         a, b = b, a
         phi = phi - np.pi / 2 if phi > 0 else phi + np.pi / 2
