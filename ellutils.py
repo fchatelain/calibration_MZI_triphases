@@ -46,7 +46,7 @@ def get_normal_vect(vamp, vphi):
             np.sin(phi1 - phi2 - tri) / a3,
         ]
     ).T
-    # Convention to fix the vector sign : sum of the entries is >0
+    # Convention to fix the vector sign: sum of the entries is >0
     factnorm = np.sign(np.sum(betaortho)) / np.linalg.norm(betaortho)
     betaortho *= factnorm
     return betaortho.reshape((3, 1))
@@ -73,7 +73,10 @@ def get_basis(vamp, vphi):
 def param2pol(vamp, vphi):
     """Get the polar coefs (a, b, phi, ou, ov, Bell) from
     the paramatric form coefs vamp and vphi
-    s.t a >= b and phi in (-pi/2, pi/2)"""
+    s.t a >= b and phi in (-pi/2, pi/2).
+    See also paper "Monitoring of Three-Phase Signals based on 
+    Singular-Value Decomposition", IEEE TSG 2019
+    """
 
     ## Get the basis where the ellipsis spreads
     Bell = get_basis(vamp, vphi)
