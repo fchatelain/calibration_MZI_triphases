@@ -214,7 +214,7 @@ def validation_score(A, B, C, D, E, F, offset, Bell):
     offvect = np.array([[offu, offv, offset]]).ravel()
     modpoweroff = (Bell.T @ offvect).ravel()
     # print(f"vel socre func : resnorm =  {lin.norm(modpower-modpoweroff)}")
-    return lin.norm(modpower - modpoweroff)
+    return lin.norm(modpower - modpoweroff) / lin.norm(modpoweroff)
 
 
 def pol2theta(a, b, phi, offu, offv, Bell, phase0, X):  # add offu, offv, phase0
@@ -233,6 +233,106 @@ def pol2theta(a, b, phi, offu, offv, Bell, phase0, X):  # add offu, offv, phase0
     theta += phase0  # the arbitrary origin for the first phasor
     theta = np.unwrap(theta)
     return theta
+
+def fitbalancepar(X):
+    n = len(X[:, 0])
+    y = np.ones((n, 1)) * 3
+
+    # En pratique ca ne s'avere pas nécessaire de régulariser dans les simus
+    # from sklearn.linear_model import RidgeCV, Ridge, LinearRegression
+    # reg = LinearRegression(fit_intercept=False).fit(X, y)
+    # beta = reg.coef_.reshape((3, 1)) / np.linalg.norm(reg.coef_)
+    beta = lin.pinv(X.T @ X) @ (X.T @ y)
+    vamphat = 1 / beta.ravel()
+
+    #  Normalize the vector normal to the ellipse plane
+    beta /= np.linalg.norm(beta)
+    offset = np.mean(X @ beta)
+    Portho = np.eye(3) - beta @ beta.T
+    Xproj = Portho @ X.T + offset * beta
+    
+    #  Base orthogonale (u,v) du plan de l'ellipse
+    u = Portho[0, :] / np.linalg.norm(Portho[0, :])
+    v = Portho[1, :] - u * np.dot(u, Portho[1, :])
+    v /= np.linalg.norm(v)
+    
+    # Matrice de passage vers la base orthonormale (u,v,beta)
+    Bell = np.vstack((u, v, beta.ravel()))
+    #  Coordonnées dans le plan affine de l'ellipse
+    Y = Bell @ X.T
+    y0 = Y[0, :].T
+    y1 = Y[1, :].T
+    
+    # Prior solution: estimate of the amplitude vamphat which assumes that the 
+    # relative phases are zero (phi1=phi2=phi3=0)
+    vphizero= np.zeros(3)
+    beta_prior = pol2quad(*param2pol(vamphat.ravel(), vphizero)[:5])
+    
+    Xell = np.vstack((y0 ** 2, y0 * y1, y1 ** 2, y0, y1)).T
+    ytarget = np.ones((n, 1))
+
+    # Scale (standardize) the data
+    Xestd = np.std(Xell, axis=0)  # Xestd[:] = 1
+    Xells = Xell / Xestd
+    U, s, Vh = lin.svd(Xells.T, full_matrices=False)
+    s /= np.sqrt(n)
+    #  Set a circular prior with physically possible offset
+    beta0 = np.ones((5, 1))
+    beta0[1] = 0
+    # Set a prior as reference to shrink toward
+    beta0 = np.array(beta_prior[:5]).reshape(5, 1)
+    ytarget0 = (ytarget - Xells @ beta0) / np.sqrt(n)
+    # precompute the 5*n products
+    Vy = Vh @ ytarget0
+
+    def fit_quadcoeff(alpha):
+        # Shrink the solution towards the prior to regularize the fit
+        coef_ell = (U * (s / (s ** 2 + alpha))) @ Vy + beta0
+        # Set the original scale
+        coef_ell = coef_ell.ravel() / Xestd  # coef A,B,C,D,E
+        valscore = validation_score(*coef_ell.T, -1, offset, Bell)
+        return coef_ell, valscore
+
+    # Shrinkage parameters
+    alphas = np.logspace(-10, 1, num=100)
+    valscore = np.zeros(alphas.shape)
+    for ia, alpha in enumerate(alphas):
+        coeff, valscore[ia] = fit_quadcoeff(alpha)
+        # print(f"alpha={alpha}: valscore={valscore[ia]}")
+
+    if np.min(valscore) > 0.1:
+        warnings.warn(
+            f"estimation results for the ellipsis are not consistent with the physical constraints.\nMismatch = {np.min(valscore)}",
+            RuntimeWarning,
+        )
+
+    alphaopt = alphas[np.argmin(valscore)]
+    coef_ell, _ = fit_quadcoeff(alphaopt)
+    A, B, C, D, E = coef_ell.T
+    F = -1
+    a, b, phi, offu, offv = quad2pol(A, B, C, D, E, F)
+    
+    vamphat, phases, phase0 = pol2balance(a, b, phi, Bell, phaseref=0)
+
+    
+    tri = np.pi/3*2
+    vphihat = subsangle(np.array([0, tri, -tri]), phases).ravel()
+    
+    thetahat = pol2theta(a, b, phi, offu, offv, Bell, phase0, X)
+    decalage = thetahat[0] // (2*np.pi)
+    thetahat -= decalage * (2*np.pi)
+
+    return vamphat, vphihat, thetahat
+
+def clarkefit(X):
+    _, _, _, _, _, Bclarke, _ = param2pol(np.array([1, 1, 1]), np.array([0, 0, 0]))
+
+    #  Theta estimate w/o any correction (default estimate)
+    z_clarke = Bclarke @ X.T
+    angle_clarke = np.unwrap(np.angle(z_clarke[0, :] - 1j * z_clarke[1, :]))
+    decalage = angle_clarke[0] // (2*np.pi)
+    return angle_clarke - decalage * (2*np.pi)
+
 
 
 def subsangle(x, y):
